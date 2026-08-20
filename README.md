@@ -7,7 +7,7 @@ En este proyecto trabaje en la mejora de un modelo de prediccion de precios de v
 Mi objetivo fue:
 
 - Empezar con un baseline sencillo (Regresion Lineal).
-- Hacer al menos 5 experimentos cambiando cosas concretas:
+- Hacer 5 experimentos cambiando cosas concretas:
   - escalamiento y regularizacion,
   - creacion de nuevas variables (antiguedad, log-km, etc.),
   - cambio de algoritmo (Random Forest, Gradient Boosting),
@@ -77,7 +77,7 @@ Aqui describo que cambie en cada experimento, si mejoro o empeoro, y por que cre
 
 - **Que hice:** Agregue StandardScaler a las variables numericas y cambie el modelo a Ridge (alpha=10).
 - **Por que:** Lei que Ridge ayuda cuando hay muchas variables one-hot y posible multicolinealidad.
-- **Resultado:** Las metricas mejoraron ligeramente respecto al baseline. Creo que la regularizacion ayudo a que los coeficientes no fueran tan inestables.
+- **Resultado:** Las metricas mejoraron bastante respecto al baseline. El RMSE bajo de 2.84 a 1.96 (30.97% de mejora). Creo que la regularizacion ayudo a que los coeficientes no fueran tan inestables con tantas variables one-hot.
 
 ### E2 - Feature engineering + Ridge
 
@@ -86,25 +86,25 @@ Aqui describo que cambie en cada experimento, si mejoro o empeoro, y por que cre
   - `Log_Kms` (log de los kilometros)
   - `Price_Ratio` (Present_Price / Selling_Price)
 - **Por que:** pense que la antiguedad y los kilometros en log podrian capturar mejor la relacion no lineal con el precio.
-- **Resultado:** Este experimento mejoro bastante las metricas. Creo que agregar estas variables le dio al modelo informacion mas util sobre la depreciacion del vehiculo.
+- **Resultado:** Este experimento **empeoro** todas las metricas (MAE: 2.31, RMSE: 5.16, R2: 0.21). Creo que el problema fue que `Price_Ratio` usa el target (`Selling_Price`), lo cual causa data leakage y hace que el modelo no generalice bien en el test.
 
 ### E3 - Random Forest
 
 - **Que hice:** Cambie el algoritmo a RandomForestRegressor (200 arboles).
 - **Por que:** lei que Random Forest captura relaciones no lineales sin necesidad de transformar tanto las variables.
-- **Resultado:** Mejoro respecto a Ridge, pero no tanto como esperaba. Supongo que con mas ajuste de hiperparametros podria mejorar, pero lo deje basico para no complicarlo.
+- **Resultado:** Mejoro el MAE respecto al baseline (1.18 vs 1.25, 6% de mejora), pero el RMSE empeoro (3.33 vs 2.84). Creo que el modelo comete errores mas consistentes pero tiene algunos errores grandes.
 
 ### E4 - Gradient Boosting
 
 - **Que hice:** Use GradientBoostingRegressor con learning_rate=0.05 y max_depth=3.
 - **Por que:** lei que Gradient Boosting suele funcionar muy bien en datos tabulares.
-- **Resultado:** Este fue uno de los mejores. Las metricas mejoraron de forma notable. Creo que el boosting aprovecha mejor las variables que el Random Forest en este dataset.
+- **Resultado:** Este experimento tuvo el **mejor MAE** (1.14, 9% de mejora respecto al baseline) y un RMSE similar al baseline (2.83 vs 2.84). Creo que el boosting aprovecha mejor las variables que el Random Forest en este dataset.
 
 ### E5 - Gradient Boosting sin outliers en train
 
 - **Que hice:** Elimine valores extremos (percentiles 1 y 99) de las variables numericas SOLO en el conjunto de entrenamiento.
 - **Por que:** pense que los outliers podrian estar afectando el aprendizaje, pero quise dejar el test intacto para evaluar en condiciones reales.
-- **Resultado:** Las metricas mejoraron un poco mas respecto a E4. Creo que quitar los valores mas extremos ayudo a que el modelo no se enfocara tanto en casos raros.
+- **Resultado:** Este experimento **empeoro** todas las metricas (MAE: 1.29, RMSE: 3.63, R2: 0.61). Creo que al sacar datos del entrenamiento, el modelo perdio informacion util y no aprendio tan bien.
 
 ## Resultados
 
@@ -113,41 +113,62 @@ Los resultados completos los guarde en:
 - `models/tabla_experimentos.csv`
 - `models/metrics.json`
 
+### Tabla de experimentos
+
+| Experimento | MAE | RMSE | R2 | Mejora MAE | Mejora RMSE |
+|---|---:|---:|---:|---:|---:|
+| Baseline - LinearRegression | 1.2539 | 2.8403 | 0.7609 | 0% | 0% |
+| E1 - Ridge + scaling | 1.2061 | 1.9607 | 0.8861 | 3.81% | 30.97% |
+| E2 - Feature engineering + Ridge | 2.3095 | 5.1624 | 0.2103 | -84.18% | -81.75% |
+| E3 - RandomForest | 1.1781 | 3.3307 | 0.6713 | 6.04% | -17.26% |
+| E4 - GradientBoosting | 1.1410 | 2.8304 | 0.7626 | 9.01% | 0.35% |
+| E5 - GradientBoosting sin outliers | 1.2850 | 3.6275 | 0.6101 | -2.48% | -27.71% |
+
 ### Mejor modelo
 
-Despues de ejecutar `train_model.py`, el mejor modelo queda registrado en `metrics.json` con:
+El mejor modelo segun RMSE fue **E1 - Ridge + scaling** con:
 
-- `best_experiment`: nombre del experimento con menor RMSE.
-- `MAE`, `RMSE`, `R2`: metricas finales.
-- `mejora_MAE_%`, `mejora_RMSE_%`: mejora respecto al baseline.
+- **MAE:** 1.2061 lakhs INR
+- **RMSE:** 1.9607 lakhs INR
+- **R2:** 0.8861
+- **Mejora respecto al baseline:** 3.81% en MAE y 30.97% en RMSE
 
-En mi caso, el mejor resultado lo obtuve con **E4/E5** (dependiendo de la corrida), pero los numeros exactos los podes ver en `metrics.json`.
+Aunque E4 (Gradient Boosting) tuvo mejor MAE (1.14), E1 tuvo mucho mejor RMSE y R2, asi que ese fue el que el script guardo como `vehicle_price_best.joblib`.
 
 ### Interpretacion
 
-- Los modelos basados en boosting (E4 y E5) fueron los que mejor funcionaron.
-- El feature engineering (E2) tambien ayudo bastante, sobre todo comparado con el baseline.
-- Quitar outliers en entrenamiento (E5) dio una mejora pequena pero consistente.
+- **E1 (Ridge + scaling)** fue el mejor porque la regularizacion ayudo a controlar los coeficientes de las variables one-hot, y el escalamiento hizo que el modelo fuera mas estable numericamente.
+- **E2 (Feature engineering)** empeoro porque `Price_Ratio` tiene informacion del target, lo cual causa data leakage.
+- **E4 (Gradient Boosting)** tuvo el mejor MAE pero no el mejor RMSE, lo que sugiere que comete errores mas consistentes pero menos extremos.
+- **E5 (sin outliers)** empeoro porque al sacar datos de entrenamiento, el modelo perdio informacion util.
 
 ## Conclusiones
 
-- El mejor modelo fue: **`<best_experiment>`** con:
-  - MAE: `<MAE>` lakhs INR
-  - RMSE: `<RMSE>` lakhs INR
-  - R2: `<R2>`
-- La mayor mejora respecto al baseline la obtuve con: **`<experimento_con_mayor_mejora>`** (mejora de `<mejora_MAE_%>%` en MAE y `<mejora_RMSE_%>%` en RMSE).
-- Creo que esto paso porque los modelos de boosting capturan mejor las relaciones no lineales entre año, kilometros y precio, y el feature engineering le dio variables mas informativas al modelo.
-- Las metricas finales me parecen razonables para un primer modelo; un MAE de `<X>` lakhs representa aproximadamente `<X * 100000>` INR de error promedio, lo cual es aceptable para una estimacion inicial.
+- El mejor modelo fue: **E1 - Ridge + scaling** con:
+  - MAE: 1.2061 lakhs INR
+  - RMSE: 1.9607 lakhs INR
+  - R2: 0.8861
+- La mayor mejora respecto al baseline la obtuve con: **E1 - Ridge + scaling** (mejora de 3.81% en MAE y 30.97% en RMSE).
+- Creo que esto paso porque la regularizacion Ridge ayudo a controlar los coeficientes de las variables one-hot, y el escalamiento hizo que el modelo fuera mas estable numericamente.
+- Las metricas finales me parecen razonables para un primer modelo; un MAE de 1.2 lakhs representa aproximadamente 120,000 INR de error promedio, lo cual es aceptable para una estimacion inicial.
+- El feature engineering (E2) no funciono como esperaba porque incluí´« una variable (`Price_Ratio`) que usa el target, lo cual causa data leakage. Si hubiera usado solo `Vehicle_Age` y `Log_Kms`, probablemente habria mejorado.
+- Los modelos de boosting (E4) son prometedores, pero en este caso Ridge + scaling fue mejor porque el dataset no es tan grande y la regularizacion ayuda mas que la complejidad del boosting.
 
 ## Prediccion para 3 vehiculos
 
-Con el mejor modelo, estime el precio de 3 vehiculos como ejemplo:
+Con el mejor modelo (E1 - Ridge + scaling), estime el precio de 3 vehiculos como ejemplo:
 
 1. `swift, 2015, 40000 km, Petrol, Dealer, Manual, 0`
 2. `creta, 2017, 25000 km, Diesel, Dealer, Manual, 0`
 3. `city, 2016, 35000 km, Petrol, Dealer, Manual, 0`
 
-Los resultados los podes ver en `resultados_3_vehiculos.md` o corriendo `scripts/predict_3_vehiculos.py`.
+Para ver las predicciones exactas, corre:
+
+```bash
+python scripts/predict_3_vehiculos.py
+```
+
+O usa el frontend en http://127.0.0.1:9010 y captura los 3 vehiculos manualmente.
 
 ---
 
