@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Precio de Vehiculos - Prediccion</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; }
+    h1 { font-size: 1.4rem; }
+    form { display: grid; gap: 0.6rem; }
+    label { font-size: 0.9rem; }
+    input, select { padding: 0.4rem; font-size: 0.95rem; }
+    button { padding: 0.5rem 0.8rem; font-size: 1rem; }
+    #result { margin-top: 1rem; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Estimacion de precio de vehiculo usado</h1>
+  <form id="form">
+    <label>Car Name
+      <input id="Car_Name" required />
+    </label>
+    <label>Year
+      <input id="Year" type="number" min="1990" max="2026" required />
+    </label>
+    <label>Kms Driven
+      <input id="Kms_Driven" type="number" min="0" required />
+    </label>
+    <label>Fuel Type
+      <select id="Fuel_Type" required>
+        <option>Petrol</option>
+        <option>Diesel</option>
+        <option>CNG</option>
+        <option>LPG</option>
+        <option>Electric</option>
+      </select>
+    </label>
+    <label>Seller Type
+      <select id="Seller_Type" required>
+        <option>Dealer</option>
+        <option>Individual</option>
+      </select>
+    </label>
+    <label>Transmission
+      <select id="Transmission" required>
+        <option>Manual</option>
+        <option>Automatic</option>
+      </select>
+    </label>
+    <label>Owner
+      <input id="Owner" type="number" min="0" max="5" required />
+    </label>
+    <button type="submit">Predecir precio</button>
+  </form>
+  <div id="result"></div>
+  <script src="app.js"></script>
+</body>
+</html>
