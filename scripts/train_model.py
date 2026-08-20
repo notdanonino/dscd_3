@@ -8,7 +8,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
     RandomForestRegressor,
     GradientBoostingRegressor,
-    HistGradientBoostingRegressor,
 )
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression, Ridge
@@ -19,12 +18,17 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 TARGET = "Selling_Price"
 
+# Features base del dataset
 CATEGORICAL_FEATURES = ["Car_Name", "Fuel_Type", "Seller_Type", "Transmission", "Owner"]
 NUMERIC_FEATURES = ["Year", "Present_Price", "Kms_Driven"]
 FEATURE_ORDER = CATEGORICAL_FEATURES + NUMERIC_FEATURES
 
 
 def make_preprocessor(X, scale=False):
+    """
+    Preprocesador: imputa y hace One-Hot para categoricas.
+    Si scale=True, agrego StandardScaler a las numericas.
+    """
     cats = X.select_dtypes(include=["object", "category"]).columns.tolist()
     nums = [c for c in X.columns if c not in cats]
     num_steps = [("imputer", SimpleImputer(strategy="median"))]
@@ -49,6 +53,12 @@ def make_preprocessor(X, scale=False):
 
 
 def add_features(df):
+    """
+    Experimento 2: Agregue variables nuevas:
+    - Vehicle_Age: antiguedad del vehiculo (2020 - Year)
+    - Log_Kms: log(km) para ver si captura mejor la relacion con el precio
+    - Price_Ratio: Present_Price / Selling_Price como proxy de depreciacion
+    """
     out = df.copy()
     out["Vehicle_Age"] = 2020 - out["Year"]
     out["Log_Kms"] = np.log1p(out["Kms_Driven"].clip(lower=0))
@@ -79,7 +89,7 @@ def train_and_save() -> None:
     df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce")
     df = df.dropna(subset=[TARGET])
 
-    # Filtrar solo automoviles (opcional, para evitar motos)
+    # Filtre solo automoviles (para evitar motos que tienen otro rango de precios)
     is_car = ~df["Car_Name"].astype(str).str.match(
         r"^(Royal|UM |KTM|Bajaj|Hyosung|Mahindra|Honda|Yamaha|TVS|Hero|Activa|Suzuki)",
         case=False,
@@ -96,7 +106,10 @@ def train_and_save() -> None:
 
     results = []
 
-    # Baseline
+    # =========================================================================
+    # BASELINE: Regresion Lineal con One-Hot (sin escalamiento)
+    # Este es mi punto de partida: lo mas simple posible.
+    # =========================================================================
     results.append(
         evaluate(
             "Baseline - LinearRegression",
@@ -110,7 +123,12 @@ def train_and_save() -> None:
         )
     )
 
-    # E1: Ridge + escalamiento
+    # =========================================================================
+    # EXPERIMENTO 1: Ridge + escalamiento
+    # Que cambie: Agregue StandardScaler y use Ridge en lugar de LinearRegression.
+    # Por que: Lei que Ridge ayuda cuando hay muchas variables one-hot y posible
+    #          multicolinealidad, asi que quise probar si mejoraba las metricas.
+    # =========================================================================
     results.append(
         evaluate(
             "E1 - Ridge + scaling",
@@ -124,7 +142,15 @@ def train_and_save() -> None:
         )
     )
 
-    # E2: Feature engineering + Ridge
+    # =========================================================================
+    # EXPERIMENTO 2: Feature engineering + Ridge
+    # Que cambie: Agregue 3 variables nuevas:
+    #   - Vehicle_Age (antiguedad)
+    #   - Log_Kms (log de kilometros)
+    #   - Price_Ratio (Present_Price / Selling_Price)
+    # Por que: pense que la antiguedad y los kilometros en log podrian ayudar
+    #          a capturar relaciones no lineales con el precio.
+    # =========================================================================
     df2 = add_features(df)
     feat2 = [
         "Car_Name",
@@ -154,7 +180,12 @@ def train_and_save() -> None:
         )
     )
 
-    # E3: RandomForest
+    # =========================================================================
+    # EXPERIMENTO 3: Random Forest
+    # Que cambie: Cambie el algoritmo a RandomForestRegressor.
+    # Por que: lei que Random Forest captura relaciones no lineales sin necesidad
+    #          de transformar tanto las variables, asi que quise compararlo.
+    # =========================================================================
     results.append(
         evaluate(
             "E3 - RandomForest",
@@ -164,7 +195,7 @@ def train_and_save() -> None:
                     (
                         "model",
                         RandomForestRegressor(
-                            n_estimators=400,
+                            n_estimators=200,
                             min_samples_leaf=2,
                             max_features=0.8,
                             random_state=42,
@@ -180,7 +211,12 @@ def train_and_save() -> None:
         )
     )
 
-    # E4: GradientBoosting
+    # =========================================================================
+    # EXPERIMENTO 4: Gradient Boosting
+    # Que cambie: Use GradientBoostingRegressor con learning_rate bajo y max_depth=3.
+    # Por que: lei que Gradient Boosting suele funcionar bien en datos tabulares
+    #          y quise ver si mejoraba respecto a Random Forest.
+    # =========================================================================
     results.append(
         evaluate(
             "E4 - GradientBoosting",
@@ -190,10 +226,9 @@ def train_and_save() -> None:
                     (
                         "model",
                         GradientBoostingRegressor(
-                            n_estimators=300,
-                            learning_rate=0.04,
+                            n_estimators=200,
+                            learning_rate=0.05,
                             max_depth=3,
-                            loss="huber",
                             random_state=42,
                         ),
                     ),
@@ -206,7 +241,13 @@ def train_and_save() -> None:
         )
     )
 
-    # E5: GradientBoosting sin outliers en train
+    # =========================================================================
+    # EXPERIMENTO 5: Gradient Boosting sin outliers en train
+    # Que cambie: Elimine valores extremos (percentiles 1 y 99) de las variables
+    #             numericas SOLO en el conjunto de entrenamiento.
+    # Por que: pense que los outliers podrian estar afectando el aprendizaje,
+    #          pero quise dejar el test intacto para evaluar en condiciones reales.
+    # =========================================================================
     numeric_cols = X_train.select_dtypes(include=np.number).columns.tolist()
     mask = pd.Series(True, index=X_train.index)
     for c in numeric_cols:
@@ -222,10 +263,9 @@ def train_and_save() -> None:
                     (
                         "model",
                         GradientBoostingRegressor(
-                            n_estimators=300,
-                            learning_rate=0.04,
+                            n_estimators=200,
+                            learning_rate=0.05,
                             max_depth=3,
-                            loss="huber",
                             random_state=42,
                         ),
                     ),
@@ -238,33 +278,9 @@ def train_and_save() -> None:
         )
     )
 
-    # E6: HistGradientBoosting
-    results.append(
-        evaluate(
-            "E6 - HistGradientBoosting",
-            Pipeline(
-                [
-                    ("prep", make_preprocessor(X_train)),
-                    (
-                        "model",
-                        HistGradientBoostingRegressor(
-                            max_iter=300,
-                            learning_rate=0.06,
-                            max_leaf_nodes=31,
-                            l2_regularization=1.0,
-                            random_state=42,
-                        ),
-                    ),
-                ]
-            ),
-            X_train,
-            X_test,
-            y_train,
-            y_test,
-        )
-    )
-
-    # Tabla de experimentos
+    # =========================================================================
+    # TABLA DE RESULTADOS
+    # =========================================================================
     table = pd.DataFrame(
         [
             {k: r[k] for k in ["experimento", "MAE", "RMSE", "R2"]}
